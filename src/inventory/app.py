@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Response, status
 
 from inventory.auth import api_key_checker, configured_key
 from inventory.models import Adjustment, ItemCreate, ItemOut, ItemUpdate, SkuAdjustment
