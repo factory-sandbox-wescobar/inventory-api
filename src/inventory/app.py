@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI, HTTPException, Response, status
 
 from inventory.auth import api_key_checker, configured_key
-from inventory.models import Adjustment, ItemCreate, ItemOut, ItemUpdate
+from inventory.models import Adjustment, ItemCreate, ItemOut, ItemUpdate, SkuAdjustment
 from inventory.store import DuplicateSku, InsufficientStock, InventoryStore, Item, NotFound
 
 
@@ -73,6 +73,21 @@ def create_app(api_key: str | None = None, store: InventoryStore | None = None) 
                 status.HTTP_409_CONFLICT,
                 detail=f"not enough stock of {sku} to remove {-body.delta}",
             ) from None
+
+    @app.post(
+        "/adjustments", response_model=list[ItemOut], dependencies=[require_key]
+    )
+    def adjust_items(body: list[SkuAdjustment] = Body(min_length=1)) -> list[ItemOut]:
+        try:
+            items = store.adjust_many((line.sku, line.delta) for line in body)
+        except NotFound as error:
+            raise not_found(error.args[0]) from None
+        except InsufficientStock as error:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail=f"not enough stock of {error.args[0]} to apply the adjustments",
+            ) from None
+        return [ItemOut.from_item(item) for item in items]
 
     return app
 

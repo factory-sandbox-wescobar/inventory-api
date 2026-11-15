@@ -7,6 +7,7 @@ turns them into status codes.
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
 
@@ -93,4 +94,34 @@ class InventoryStore:
                 raise InsufficientStock(sku)
             updated = replace(current, quantity=new_quantity)
             self._items[sku] = updated
+            return updated
+
+    def adjust_many(self, adjustments: Iterable[tuple[str, int]]) -> list[Item]:
+        """Apply several (sku, delta) adjustments, all or none.
+
+        Adjustments are checked in order against a running total, so the same
+        SKU may appear more than once. The first one that names an unknown SKU
+        (NotFound) or would take a quantity below zero (InsufficientStock) stops
+        the whole batch with nothing changed; the error carries that SKU. On
+        success, returns the updated items, one per SKU, in order of first
+        appearance. The whole batch runs under one lock, so no other request
+        sees or interleaves with a half-applied batch.
+        """
+        with self._lock:
+            quantities: dict[str, int] = {}
+            for sku, delta in adjustments:
+                if sku not in quantities:
+                    try:
+                        quantities[sku] = self._items[sku].quantity
+                    except KeyError:
+                        raise NotFound(sku) from None
+                new_quantity = quantities[sku] + delta
+                if new_quantity < 0:
+                    raise InsufficientStock(sku)
+                quantities[sku] = new_quantity
+            updated = []
+            for sku, quantity in quantities.items():
+                item = replace(self._items[sku], quantity=quantity)
+                self._items[sku] = item
+                updated.append(item)
             return updated

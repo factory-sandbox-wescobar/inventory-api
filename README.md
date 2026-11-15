@@ -15,7 +15,8 @@ These are how the service is meant to behave. Where the code disagrees, the code
 - **Price** is `unit_price_pence`, a whole number of pence, never negative. Money is never a float.
 - **Low stock:** an item is low on stock when its quantity is at or below its reorder level.
 - **Adjustments** add to or remove from the quantity, with a reason. An adjustment that would take the quantity below zero is refused and changes nothing.
-- **Writes** (create, update, delete, adjust) need the `X-API-Key` header to match the `INVENTORY_API_KEY` environment variable. Reads need no key. With no key set, every write is refused.
+- **Batch adjustments** (`POST /adjustments`) apply every adjustment or none. They are checked in order against a running total, so a SKU may appear more than once. The first unknown SKU (404) or adjustment that would go below zero (409) stops the batch, changes nothing, and is named in the error.
+- **Writes** (create, update, delete, adjust, batch adjust) need the `X-API-Key` header to match the `INVENTORY_API_KEY` environment variable. Reads need no key. With no key set, every write is refused.
 
 ## Endpoints
 
@@ -27,6 +28,7 @@ These are how the service is meant to behave. Where the code disagrees, the code
 | `PATCH /items/{sku}` | yes | Change some of an item's fields | 200, 404, 422 |
 | `DELETE /items/{sku}` | yes | Remove an item | 204, 404 |
 | `POST /items/{sku}/adjust` | yes | Body `{"delta": -2, "reason": "order 1182"}` | 200, 404, 409 not enough stock, 422 |
+| `POST /adjustments` | yes | Body `[{"sku": "WID-001", "delta": -2, "reason": "order 1182"}, ...]`, all or nothing; returns the updated items (one per SKU, in order of first appearance) | 200, 404 unknown SKU, 409 not enough stock, 422 |
 
 Every item in a response has `sku`, `name`, `category`, `quantity`, `reorder_level`, `unit_price_pence` and `low_stock`. Errors are FastAPI's usual `{"detail": ...}`. Interactive docs are at `/docs` while the service runs.
 
