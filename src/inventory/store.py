@@ -7,6 +7,7 @@ turns them into status codes.
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
 
@@ -94,3 +95,31 @@ class InventoryStore:
             updated = replace(current, quantity=new_quantity)
             self._items[sku] = updated
             return updated
+
+    def adjust_many(self, adjustments: Iterable[tuple[str, int]]) -> list[Item]:
+        """Apply every (sku, delta) adjustment, or none of them.
+
+        The whole batch runs under one lock hold, so concurrent calls cannot
+        interleave. A SKU may repeat: the stock check uses the running total.
+        Unknown SKUs are reported (NotFound) before any stock check; the first
+        entry that would go below zero raises InsufficientStock. In both cases
+        nothing is changed. Returns the updated items, one per distinct SKU, in
+        order of first appearance.
+        """
+        batch = list(adjustments)
+        with self._lock:
+            for sku, _ in batch:
+                if sku not in self._items:
+                    raise NotFound(sku)
+            quantities: dict[str, int] = {}
+            for sku, delta in batch:
+                running = quantities.get(sku, self._items[sku].quantity) + delta
+                if running < 0:
+                    raise InsufficientStock(sku)
+                quantities[sku] = running
+            updated = {
+                sku: replace(self._items[sku], quantity=quantity)
+                for sku, quantity in quantities.items()
+            }
+            self._items.update(updated)
+            return list(updated.values())
