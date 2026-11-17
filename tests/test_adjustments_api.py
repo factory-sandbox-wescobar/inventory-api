@@ -45,6 +45,14 @@ def test_applies_every_adjustment_and_returns_updated_items(
     assert quantity(client, "BOLT-10") == 10
 
 
+def test_empty_list_is_200_with_an_empty_list(client: TestClient, widget: dict) -> None:
+    response = client.post("/adjustments", json=[], headers=AUTH)
+
+    assert response.status_code == 200
+    assert response.json() == []
+    assert quantity(client, "WID-001") == 10
+
+
 def test_unknown_sku_is_404_names_it_and_changes_nothing(
     client: TestClient, widget: dict
 ) -> None:
@@ -80,6 +88,21 @@ def test_going_below_zero_is_409_names_the_sku_and_changes_nothing(
     assert "WID-001" in response.json()["detail"]
     assert quantity(client, "WID-001") == 10
     assert quantity(client, "BOLT-10") == 5
+
+
+def test_unknown_sku_wins_over_going_below_zero(client: TestClient, widget: dict) -> None:
+    response = client.post(
+        "/adjustments",
+        json=[
+            {"sku": "WID-001", "delta": -11, "reason": "order"},
+            {"sku": "NOPE-404", "delta": 1, "reason": "delivery"},
+        ],
+        headers=AUTH,
+    )
+
+    assert response.status_code == 404
+    assert "NOPE-404" in response.json()["detail"]
+    assert quantity(client, "WID-001") == 10
 
 
 def test_repeated_sku_uses_the_running_total(client: TestClient, widget: dict) -> None:
