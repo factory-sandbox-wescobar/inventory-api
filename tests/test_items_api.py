@@ -56,6 +56,21 @@ def test_get_unknown_item_is_not_found(client: TestClient) -> None:
     assert client.get("/items/NOPE-404").status_code == 404
 
 
+def test_count_is_zero_when_there_are_no_items(client: TestClient) -> None:
+    response = client.get("/items/count")
+
+    assert response.status_code == 200
+    assert response.json() == {"count": 0}
+
+
+def test_count_returns_the_number_of_items(client: TestClient, widget: dict) -> None:
+    client.post(
+        "/items", json={"sku": "BOLT-10", "name": "Bolt", "unit_price_pence": 5}, headers=AUTH
+    )
+
+    assert client.get("/items/count").json() == {"count": 2}
+
+
 def test_list_is_sorted_by_sku_and_filters_by_category(client: TestClient) -> None:
     for sku, category in [("C-300", "tools"), ("A-100", "parts"), ("B-200", "tools")]:
         client.post(

@@ -22,6 +22,11 @@ def create_app(api_key: str | None = None, store: InventoryStore | None = None) 
     def list_items(category: str | None = None) -> list[ItemOut]:
         return [ItemOut.from_item(item) for item in store.list(category=category)]
 
+    # Declared before /items/{sku} so "count" is not read as a SKU.
+    @app.get("/items/count")
+    def count_items() -> dict[str, int]:
+        return {"count": len(store.list())}
+
     @app.post(
         "/items",
         response_model=ItemOut,
