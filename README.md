@@ -23,6 +23,7 @@ These are how the service is meant to behave. Where the code disagrees, the code
 | Method and path | Key | What it does | Responses |
 |---|---|---|---|
 | `GET /items?category=` | no | List items sorted by SKU, optionally in one category | 200 |
+| `GET /categories` | no | The distinct item categories, sorted; an empty list when there are no items | 200 |
 | `POST /items` | yes | Create an item | 201, 409 SKU exists, 422 invalid |
 | `GET /items/{sku}` | no | One item | 200, 404 |
 | `PATCH /items/{sku}` | yes | Change some of an item's fields | 200, 404, 422 |

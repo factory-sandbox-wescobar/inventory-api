@@ -51,6 +51,12 @@ class InventoryStore:
             items = [item for item in items if item.category == category]
         return sorted(items, key=lambda item: item.sku)
 
+    def categories(self) -> list[str]:
+        """The distinct categories of all items, sorted."""
+        with self._lock:
+            found = {item.category for item in self._items.values()}
+        return sorted(found)
+
     def get(self, sku: str) -> Item:
         with self._lock:
             try:
