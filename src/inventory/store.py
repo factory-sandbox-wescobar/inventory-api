@@ -1,13 +1,16 @@
 """The in-memory stock store and its rules.
 
 The store knows nothing about HTTP. It raises the errors below, and the app
-turns them into status codes.
+turns them into status codes. `InventoryStore` implements the
+`inventory.store_protocol.Store` protocol.
 """
 
 from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, replace
+
+from inventory.store_protocol import Store
 
 
 class NotFound(Exception):
@@ -36,8 +39,8 @@ class Item:
         return self.quantity < self.reorder_level
 
 
-class InventoryStore:
-    """Items by SKU, safe to use from several request threads."""
+class InventoryStore(Store):
+    """Items by SKU in memory, safe to use from several request threads."""
 
     def __init__(self) -> None:
         self._items: dict[str, Item] = {}
