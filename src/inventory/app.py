@@ -2,11 +2,34 @@
 
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
 
 from inventory.auth import api_key_checker, configured_key
 from inventory.models import Adjustment, ItemCreate, ItemOut, ItemUpdate, SkuAdjustment
-from inventory.store import DuplicateSku, InsufficientStock, InventoryStore, Item, NotFound
+from inventory.store import (
+    DuplicateSku,
+    InsufficientStock,
+    InventoryStore,
+    Item,
+    NotFound,
+    VersionMismatch,
+)
+
+
+def parse_if_match(value: str | None) -> int | None:
+    """The version an If-Match header asks for; None if absent (or `*`).
+
+    A value that is not a version number gets -1, which matches no item.
+    """
+    if value is None:
+        return None
+    text = value.strip()
+    if text == "*":
+        return None
+    if text.startswith("W/"):
+        text = text[2:]
+    text = text.strip('"')
+    return int(text) if text.isascii() and text.isdigit() else -1
 
 
 def create_app(api_key: str | None = None, store: InventoryStore | None = None) -> FastAPI:
@@ -17,6 +40,16 @@ def create_app(api_key: str | None = None, store: InventoryStore | None = None) 
 
     def not_found(sku: str) -> HTTPException:
         return HTTPException(status.HTTP_404_NOT_FOUND, detail=f"no item with SKU {sku}")
+
+    def precondition_failed(sku: str) -> HTTPException:
+        return HTTPException(
+            status.HTTP_412_PRECONDITION_FAILED,
+            detail=f"item {sku} has changed since the version given in If-Match",
+        )
+
+    def with_etag(item: Item, response: Response) -> ItemOut:
+        response.headers["ETag"] = f'"{item.version}"'
+        return ItemOut.from_item(item)
 
     @app.get("/items", response_model=list[ItemOut])
     def list_items(category: str | None = None) -> list[ItemOut]:
@@ -38,19 +71,27 @@ def create_app(api_key: str | None = None, store: InventoryStore | None = None) 
         return ItemOut.from_item(item)
 
     @app.get("/items/{sku}", response_model=ItemOut)
-    def get_item(sku: str) -> ItemOut:
+    def get_item(sku: str, response: Response) -> ItemOut:
         try:
-            return ItemOut.from_item(store.get(sku))
+            return with_etag(store.get(sku), response)
         except NotFound:
             raise not_found(sku) from None
 
     @app.patch("/items/{sku}", response_model=ItemOut, dependencies=[require_key])
-    def update_item(sku: str, body: ItemUpdate) -> ItemOut:
+    def update_item(
+        sku: str,
+        body: ItemUpdate,
+        response: Response,
+        if_match: str | None = Header(default=None),
+    ) -> ItemOut:
         changes = body.model_dump(exclude_none=True)
         try:
-            return ItemOut.from_item(store.update(sku, **changes))
+            item = store.update(sku, expected_version=parse_if_match(if_match), **changes)
         except NotFound:
             raise not_found(sku) from None
+        except VersionMismatch:
+            raise precondition_failed(sku) from None
+        return with_etag(item, response)
 
     @app.delete(
         "/items/{sku}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[require_key]
@@ -63,16 +104,24 @@ def create_app(api_key: str | None = None, store: InventoryStore | None = None) 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.post("/items/{sku}/adjust", response_model=ItemOut, dependencies=[require_key])
-    def adjust_item(sku: str, body: Adjustment) -> ItemOut:
+    def adjust_item(
+        sku: str,
+        body: Adjustment,
+        response: Response,
+        if_match: str | None = Header(default=None),
+    ) -> ItemOut:
         try:
-            return ItemOut.from_item(store.adjust(sku, body.delta))
+            item = store.adjust(sku, body.delta, expected_version=parse_if_match(if_match))
         except NotFound:
             raise not_found(sku) from None
+        except VersionMismatch:
+            raise precondition_failed(sku) from None
         except InsufficientStock:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
                 detail=f"not enough stock of {sku} to remove {-body.delta}",
             ) from None
+        return with_etag(item, response)
 
     @app.post("/adjustments", response_model=list[ItemOut], dependencies=[require_key])
     def adjust_items(body: list[SkuAdjustment]) -> list[ItemOut]:
