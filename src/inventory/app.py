@@ -8,15 +8,21 @@ from inventory.auth import api_key_checker, configured_key
 from inventory.models import Adjustment, ItemCreate, ItemOut, ItemUpdate, SkuAdjustment
 from inventory.store import DuplicateSku, InsufficientStock, InventoryStore, Item, NotFound
 
+VERSION = "0.1.0"
+
 
 def create_app(api_key: str | None = None, store: InventoryStore | None = None) -> FastAPI:
     """Build the app. `api_key` defaults to the INVENTORY_API_KEY environment variable."""
     store = store if store is not None else InventoryStore()
     require_key = Depends(api_key_checker(api_key if api_key is not None else configured_key()))
-    app = FastAPI(title="Inventory API", version="0.1.0")
+    app = FastAPI(title="Inventory API", version=VERSION)
 
     def not_found(sku: str) -> HTTPException:
         return HTTPException(status.HTTP_404_NOT_FOUND, detail=f"no item with SKU {sku}")
+
+    @app.get("/version")
+    def get_version() -> dict[str, str]:
+        return {"version": VERSION}
 
     @app.get("/items", response_model=list[ItemOut])
     def list_items(category: str | None = None) -> list[ItemOut]:
