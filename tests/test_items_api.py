@@ -45,6 +45,40 @@ def test_create_rejects_negative_quantity_and_price(client: TestClient) -> None:
         assert response.status_code == 422, field
 
 
+def test_create_strips_whitespace_from_the_name(client: TestClient) -> None:
+    response = client.post(
+        "/items", json={"sku": "SP-001", "name": " Widget ", "unit_price_pence": 1}, headers=AUTH
+    )
+
+    assert response.status_code == 201
+    assert response.json()["name"] == "Widget"
+    assert client.get("/items/SP-001").json()["name"] == "Widget"
+
+
+def test_create_rejects_a_blank_name(client: TestClient) -> None:
+    for name in ("", "   "):
+        response = client.post(
+            "/items", json={"sku": "BL-001", "name": name, "unit_price_pence": 1}, headers=AUTH
+        )
+        assert response.status_code == 422, repr(name)
+
+
+def test_name_length_limit_applies_to_the_stripped_name(client: TestClient) -> None:
+    padded = "  " + "a" * 100 + "  "
+    too_long = "a" * 101
+
+    ok = client.post(
+        "/items", json={"sku": "LEN-001", "name": padded, "unit_price_pence": 1}, headers=AUTH
+    )
+    bad = client.post(
+        "/items", json={"sku": "LEN-002", "name": too_long, "unit_price_pence": 1}, headers=AUTH
+    )
+
+    assert ok.status_code == 201
+    assert ok.json()["name"] == "a" * 100
+    assert bad.status_code == 422
+
+
 def test_get_item(client: TestClient, widget: dict) -> None:
     response = client.get("/items/WID-001")
 
@@ -78,6 +112,20 @@ def test_update_changes_only_the_fields_given(client: TestClient, widget: dict) 
 
     assert response.status_code == 200
     assert response.json() == {**widget, "name": "Blue widget", "unit_price_pence": 300}
+
+
+def test_update_strips_whitespace_from_the_name(client: TestClient, widget: dict) -> None:
+    response = client.patch("/items/WID-001", json={"name": "  Blue widget "}, headers=AUTH)
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Blue widget"
+
+
+def test_update_rejects_a_blank_name(client: TestClient, widget: dict) -> None:
+    response = client.patch("/items/WID-001", json={"name": "   "}, headers=AUTH)
+
+    assert response.status_code == 422
+    assert client.get("/items/WID-001").json()["name"] == widget["name"]
 
 
 def test_update_unknown_item_is_not_found(client: TestClient) -> None:
