@@ -22,6 +22,10 @@ def create_app(api_key: str | None = None, store: InventoryStore | None = None) 
     def list_items(category: str | None = None) -> list[ItemOut]:
         return [ItemOut.from_item(item) for item in store.list(category=category)]
 
+    @app.get("/skus", response_model=list[str])
+    def list_skus() -> list[str]:
+        return [item.sku for item in store.list()]
+
     @app.post(
         "/items",
         response_model=ItemOut,
