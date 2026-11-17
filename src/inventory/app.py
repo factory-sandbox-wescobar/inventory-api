@@ -16,7 +16,9 @@ def create_app(api_key: str | None = None, store: InventoryStore | None = None) 
     app = FastAPI(title="Inventory API", version="0.1.0")
 
     def not_found(sku: str) -> HTTPException:
-        return HTTPException(status.HTTP_404_NOT_FOUND, detail=f"no item with SKU {sku}")
+        return HTTPException(
+            status.HTTP_404_NOT_FOUND, detail=f"no item with SKU {sku.upper()}"
+        )
 
     @app.get("/items", response_model=list[ItemOut])
     def list_items(category: str | None = None) -> list[ItemOut]:
@@ -33,7 +35,7 @@ def create_app(api_key: str | None = None, store: InventoryStore | None = None) 
             item = store.create(Item(**body.model_dump()))
         except DuplicateSku:
             raise HTTPException(
-                status.HTTP_409_CONFLICT, detail=f"SKU {body.sku} already exists"
+                status.HTTP_409_CONFLICT, detail=f"SKU {body.sku.upper()} already exists"
             ) from None
         return ItemOut.from_item(item)
 
@@ -71,7 +73,7 @@ def create_app(api_key: str | None = None, store: InventoryStore | None = None) 
         except InsufficientStock:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
-                detail=f"not enough stock of {sku} to remove {-body.delta}",
+                detail=f"not enough stock of {sku.upper()} to remove {-body.delta}",
             ) from None
 
     @app.post("/adjustments", response_model=list[ItemOut], dependencies=[require_key])

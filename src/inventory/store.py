@@ -38,7 +38,11 @@ class Item:
 
 
 class InventoryStore:
-    """Items by SKU, safe to use from several request threads."""
+    """Items by SKU, safe to use from several request threads.
+
+    SKUs are case-insensitive: they are stored and returned upper-cased, and
+    every lookup upper-cases the SKU it is given.
+    """
 
     def __init__(self) -> None:
         self._items: dict[str, Item] = {}
@@ -52,6 +56,7 @@ class InventoryStore:
         return sorted(items, key=lambda item: item.sku)
 
     def get(self, sku: str) -> Item:
+        sku = sku.upper()
         with self._lock:
             try:
                 return self._items[sku]
@@ -59,6 +64,7 @@ class InventoryStore:
                 raise NotFound(sku) from None
 
     def create(self, item: Item) -> Item:
+        item = replace(item, sku=item.sku.upper())
         with self._lock:
             if item.sku in self._items:
                 raise DuplicateSku(item.sku)
@@ -66,6 +72,8 @@ class InventoryStore:
             return item
 
     def update(self, sku: str, **changes: object) -> Item:
+        sku = sku.upper()
+        changes.pop("sku", None)
         with self._lock:
             try:
                 current = self._items[sku]
@@ -76,6 +84,7 @@ class InventoryStore:
             return updated
 
     def delete(self, sku: str) -> None:
+        sku = sku.upper()
         with self._lock:
             try:
                 del self._items[sku]
@@ -84,6 +93,7 @@ class InventoryStore:
 
     def adjust(self, sku: str, delta: int) -> Item:
         """Add `delta` (negative to remove) to an item's quantity."""
+        sku = sku.upper()
         with self._lock:
             try:
                 current = self._items[sku]
@@ -100,13 +110,14 @@ class InventoryStore:
         """Apply every (sku, delta) adjustment, or none of them.
 
         The whole batch runs under one lock hold, so concurrent calls cannot
-        interleave. A SKU may repeat: the stock check uses the running total.
+        interleave. A SKU may repeat (in any case): the stock check uses the
+        running total.
         Unknown SKUs are reported (NotFound) before any stock check; the first
         entry that would go below zero raises InsufficientStock. In both cases
         nothing is changed. Returns the updated items, one per distinct SKU, in
         order of first appearance.
         """
-        batch = list(adjustments)
+        batch = [(sku.upper(), delta) for sku, delta in adjustments]
         with self._lock:
             for sku, _ in batch:
                 if sku not in self._items:
