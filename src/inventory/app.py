@@ -18,6 +18,10 @@ def create_app(api_key: str | None = None, store: InventoryStore | None = None) 
     def not_found(sku: str) -> HTTPException:
         return HTTPException(status.HTTP_404_NOT_FOUND, detail=f"no item with SKU {sku}")
 
+    @app.get("/skus", response_model=list[str])
+    def list_skus() -> list[str]:
+        return sorted(item.sku for item in store.list())
+
     @app.get("/items", response_model=list[ItemOut])
     def list_items(category: str | None = None) -> list[ItemOut]:
         return [ItemOut.from_item(item) for item in store.list(category=category)]

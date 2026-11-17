@@ -71,6 +71,27 @@ def test_list_is_sorted_by_sku_and_filters_by_category(client: TestClient) -> No
     assert tool_skus == ["B-200", "C-300"]
 
 
+def test_skus_lists_every_sku_sorted(client: TestClient) -> None:
+    for sku, category in [("C-300", "tools"), ("A-100", "parts"), ("B-200", "tools")]:
+        client.post(
+            "/items",
+            json={"sku": sku, "name": sku, "category": category, "unit_price_pence": 1},
+            headers=AUTH,
+        )
+
+    response = client.get("/skus")
+
+    assert response.status_code == 200
+    assert response.json() == ["A-100", "B-200", "C-300"]
+
+
+def test_skus_is_empty_when_there_are_no_items(client: TestClient) -> None:
+    response = client.get("/skus")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 def test_update_changes_only_the_fields_given(client: TestClient, widget: dict) -> None:
     response = client.patch(
         "/items/WID-001", json={"name": "Blue widget", "unit_price_pence": 300}, headers=AUTH
