@@ -126,3 +126,66 @@ def test_low_stock_when_quantity_is_under_the_reorder_level(
 
     assert item["quantity"] == 1
     assert item["low_stock"] is True
+
+
+def test_get_returns_the_version_as_an_etag(client: TestClient, widget: dict) -> None:
+    assert client.get("/items/WID-001").headers["ETag"] == '"1"'
+
+    client.patch("/items/WID-001", json={"name": "x"}, headers=AUTH)
+    client.post("/items/WID-001/adjust", json={"delta": 1, "reason": "delivery"}, headers=AUTH)
+
+    assert client.get("/items/WID-001").headers["ETag"] == '"3"'
+
+
+def test_patch_with_matching_if_match_succeeds(client: TestClient, widget: dict) -> None:
+    response = client.patch(
+        "/items/WID-001", json={"name": "x"}, headers={**AUTH, "If-Match": '"1"'}
+    )
+
+    assert response.status_code == 200
+    assert response.headers["ETag"] == '"2"'
+
+
+def test_patch_with_stale_if_match_is_refused_and_changes_nothing(
+    client: TestClient, widget: dict
+) -> None:
+    response = client.patch(
+        "/items/WID-001", json={"name": "x"}, headers={**AUTH, "If-Match": '"7"'}
+    )
+
+    assert response.status_code == 412
+    assert client.get("/items/WID-001").json() == widget
+    assert client.get("/items/WID-001").headers["ETag"] == '"1"'
+
+
+def test_adjust_with_stale_if_match_is_refused_and_changes_nothing(
+    client: TestClient, widget: dict
+) -> None:
+    response = client.post(
+        "/items/WID-001/adjust",
+        json={"delta": 5, "reason": "delivery"},
+        headers={**AUTH, "If-Match": '"2"'},
+    )
+
+    assert response.status_code == 412
+    assert client.get("/items/WID-001").json() == widget
+
+
+def test_adjust_with_matching_if_match_succeeds(client: TestClient, widget: dict) -> None:
+    response = client.post(
+        "/items/WID-001/adjust",
+        json={"delta": 5, "reason": "delivery"},
+        headers={**AUTH, "If-Match": '"1"'},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["quantity"] == 15
+    assert response.headers["ETag"] == '"2"'
+
+
+def test_a_garbage_if_match_never_matches(client: TestClient, widget: dict) -> None:
+    response = client.patch(
+        "/items/WID-001", json={"name": "x"}, headers={**AUTH, "If-Match": "banana"}
+    )
+
+    assert response.status_code == 412
